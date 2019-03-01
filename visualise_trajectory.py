@@ -3,6 +3,8 @@
 
 
 import torch
+from torch import nn
+from torch.autograd import Variable
 import torch.nn.functional as F
 import numpy as np
 import matplotlib
@@ -26,33 +28,52 @@ def fractalLike(x, L=10): # fractal-like Fourier series from Ann. Stat. 34, 1636
     return 2.0*series
 
 
-class Net(torch.nn.Module): # from https://github.com/MorvanZhou/PyTorch-Tutorial/blob/master/tutorial-contents/301_regression.py
+class singleLayerNet(nn.Module): # from https://github.com/MorvanZhou/PyTorch-Tutorial/blob/master/tutorial-contents/301_regression.py
     def __init__(self, n_feature, n_hidden, n_output):
-        super(Net, self).__init__()
-        self.hidden = torch.nn.Linear(n_feature, n_hidden)   # single hidden layer with n_hidden output features
-        self.predict = torch.nn.Linear(n_hidden, n_output)   # output layer
+        super(singleLayerNet, self).__init__()
+        self.hidden = nn.Linear(n_feature, n_hidden)   # single hidden layer with n_hidden output features
+        self.predict = nn.Linear(n_hidden, n_output)   # output layer
 
     def forward(self, x):
         x = F.relu(self.hidden(x))      # activation function for hidden layer
         x = self.predict(x)             # linear output
         return x
+    
+class threeLayerNet(nn.Module): # from https://github.com/MorvanZhou/PyTorch-Tutorial/blob/master/tutorial-contents/301_regression.py
+    def __init__(self, n_feature, n_hidden, n_output):
+        super(threeLayerNet, self).__init__()
+        self.hidden1 = nn.Linear(n_feature, n_hidden)   # input layer with n_hidden output features
+        self.hidden2 = nn.Linear(n_hidden, n_hidden-20)  # single hidden layer with n_hidden output features
+        n_hidden -= 20 # narrow down the NN
+        self.hidden3 = nn.Linear(n_hidden, n_hidden)    # single hidden layer with n_hidden output features
+        self.predict = nn.Linear(n_hidden, n_output)    # output layer
+
+    def forward(self, x):
+        x = F.sigmoid(self.hidden1(x))      # activation function for hidden layer
+        x = F.relu(self.hidden2(x))
+        x = F.relu(self.hidden3(x))
+        x = self.predict(x)             # linear output
+        return x    
 
 
 if __name__ == "__main__":
     # sample from function
-    N       = 30         # how many total sampled points
+    N       = 150         # how many total sampled points
     N_train = int(0.8*N) # how many training points
     
     L = 10 # sample points between 0 and this value
     X = L*np.random.rand(N)
     
-    samplingFunction = dblWell
+    samplingFunction = fractalLike
     y = samplingFunction(X) # choose which function to sample from
     
     X_train = X[:N_train] # training data
     y_train = y[:N_train]
     X_test = X[N_train:]  # validation data
     y_test = y[N_train:]
+    
+    X_train = X_train.reshape(-1,1)
+    y_train = y_train.reshape(-1,1)
 
     
     mode = "torch"
@@ -77,23 +98,38 @@ if __name__ == "__main__":
         
     elif (mode == "torch"):
         n_features = 1
-        
-        net = Net(n_features, n_hidden=10, n_output=1)     # define the network
-        x = torch.from_numpy(X_train).float().view(N_train, n_features)
+        x = torch.from_numpy(X_train).float()
         y = torch.from_numpy(y_train).float()
         
-        optimizer = torch.optim.SGD(net.parameters(), lr=0.2)
-        loss_func = torch.nn.MSELoss()  # this is for regression mean squared loss
+        # characterise neural net
+        H1,H2,H3,H4,H5 = 80,60,40,40,20
         
-        for t in range(200):
-            prediction = net(x)     # input x and predict based on x
+        net = nn.Sequential(nn.Linear(x.shape[1],H1),    # define the network
+                            nn.ReLU(), 
+                            nn.Linear(H1, H2), 
+                            nn.ReLU(), 
+                            nn.Linear(H2, H3), 
+                            nn.ReLU(), 
+                            nn.Linear(H3, H4), 
+                            nn.ReLU(), 
+                            nn.Linear(H4, H5), 
+                            nn.ReLU(), 
+                            nn.Linear(H5, x.shape[1]))
+                            #nn.LogSoftmax(dim=1))    
+        epochs = 500
+
+        optimizer = torch.optim.Adam(net.parameters(), lr=0.01)
+        loss_func = nn.MSELoss()  # mean squared loss for regression
+        
+        for t in range(epochs):
+            prediction = net(x)     # input x and predict yhat based on x
             loss = loss_func(prediction, y)     # must be (1. nn output, 2. target)
         
             optimizer.zero_grad()   # clear gradients for next train
             loss.backward()         # backpropagation, compute gradients
             optimizer.step()        # apply gradients
             
-            if t % 5 == 0:
+            if t % int(epochs/20) == 0:
                 # show learning process
                 print('Loss=%.4f' % loss.data.numpy())
                 if (progress_plots):
@@ -109,9 +145,11 @@ if __name__ == "__main__":
         plt.plot(X_test, y_test, 'r.', label='test data')
         plt.ylim(-10,15)
         
-        plt.plot(x.data.numpy(), prediction.data.numpy(), 'r-', label='NN prediction')
+        prediction = net(Variable(torch.Tensor(plotrange.reshape(-1,1))))
+        
+        plt.plot(plotrange, prediction.data.numpy(), 'k.', label='NN prediction')
         plt.legend()
-        plt.text(0.5, 10, 'Loss=%.4f' % loss.data.numpy(), fontdict={'size': 12, 'color':  'red'})
+        plt.title('Loss=%.4f' % loss.data.numpy())
         
         plt.savefig('prediction.jpg')
     
