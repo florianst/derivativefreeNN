@@ -181,7 +181,12 @@ if __name__ == "__main__":
         distance = distance.view(dt)
         graph = nx.from_numpy_matrix(distance)
         graph = nx.drawing.nx_agraph.to_agraph(graph)
-        graph.node_attr.update(colorList="blue,red", size="0.01", style="filled")
+        graph.node_attr.update(shape="circle", style="filled")
+        colourmap = matplotlib.cm.get_cmap('jet')
+        for nodeId in graph.nodes():
+            node = graph.get_node(nodeId)
+            colour = matplotlib.colors.to_hex(colourmap(int(nodeId)/graph.number_of_nodes()))
+            node.attr['fillcolor'] = colour
         graph.edge_attr.update(style="invis")  # hide edges
         graph.draw('graph.png', format='png', prog='neato')
         
