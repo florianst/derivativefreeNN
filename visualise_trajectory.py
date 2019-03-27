@@ -1,6 +1,4 @@
 # Simple Neural Network that learns a double well function. Graphviz is used to visualise the trajectory in weight space.
-# Extend by a fractal-like function
-
 
 import torch
 from torch import nn
@@ -11,9 +9,6 @@ import matplotlib
 matplotlib.use('agg') # different backend so we don't need tkinter
 import matplotlib.pyplot as plt
 import networkx as nx
-#import pygraphviz as pg
-import string
-
 
 
 def dblWell(x, bias=0): # double well
@@ -68,10 +63,11 @@ def getCurrentWeights(net, indices): # extract weights of layers in indices in f
         weightsReturn.append(np.copy(layerWeights))     # return a copy, since usually net.parameters() gives an iterator reference    
     return weightsReturn
 
-def getDistanceMatrix(weights, magnify=1):
-    distance = np.zeros((np.shape(weights)[0], np.shape(weights)[0]))
-    for t1 in range(np.shape(weights)[0]):
-        for t2 in range(t1):
+def getDistanceMatrix(weights, magnify=1, exclude_first=0):
+    dim = np.shape(weights)[0] - exclude_first
+    distance = np.zeros((dim, dim))
+    for t1 in range(exclude_first, dim):
+        for t2 in range(exclude_first, t1):
             # sum over element-wise squared differences
             for layer in range(np.shape(weights)[1]):
                 distance[t1, t2] += sum(np.square(weights[t1][layer]-weights[t2][layer]))*magnify
@@ -80,15 +76,15 @@ def getDistanceMatrix(weights, magnify=1):
 
 if __name__ == "__main__":
     # sample from function
-    N       = 150         # how many total sampled points
+    N       = 300        # how many total sampled points
     N_train = int(0.8*N) # how many training points
     
     L = 10 # sample points between 0 and this value
     X = L*np.random.rand(N)
     
     def samplingFunction(X):
-        return dblWell(X, bias=-5e-2)
-        #return fractalLike(X, L)
+        #return dblWell(X, bias=-5e-2)
+        return fractalLike(X, L)
     y = samplingFunction(X) # choose which function to sample from
     
     X_train = X[:N_train].reshape(-1,1) # training data
@@ -97,10 +93,10 @@ if __name__ == "__main__":
     y_test = y[N_train:].reshape(-1,1)
 
     
-    mode = "torch"
-    progress_plots = False
+    mode = "torch" # torch (pytorch) or tf (tensorflow)
+    progress_plots = False # plot progress during optimisation
     
-    if (mode == "tf"):
+    if (mode == "tf"): # tensorflow mode - not fully implemented yet
         import keras
         from keras.models import Sequential
         from keras.layers import Dense, Flatten, Conv2D, Dropout, MaxPooling2D
@@ -123,24 +119,18 @@ if __name__ == "__main__":
         y = torch.from_numpy(y_train).float()
         
         # characterise neural net
-        H1,H2,H3,H4,H5 = 80,60,40,40,20
-        layerIndices = [0,2,4,6,8] # used later in weight extraction
+        H1,H2 = 80,80
+        layerIndices = [0,2,4] # array indices of linear layers (used later in weight extraction)
         
         net = nn.Sequential(nn.Linear(x.shape[1],H1),    # define the network
                             nn.ReLU(), 
                             nn.Linear(H1, H2), 
                             nn.ReLU(), 
-                            nn.Linear(H2, H3), 
-                            nn.ReLU(), 
-                            nn.Linear(H3, H4), 
-                            nn.ReLU(), 
-                            nn.Linear(H4, H5), 
-                            nn.ReLU(), 
-                            nn.Linear(H5, x.shape[1]))
+                            nn.Linear(H2, x.shape[1]))
                             #nn.LogSoftmax(dim=1))    
-        epochs = 500
+        epochs = 20000
 
-        optimizer = torch.optim.Adam(net.parameters(), lr=0.01)
+        optimizer = torch.optim.Adam(net.parameters(), lr=0.02)
         loss_func = nn.MSELoss()  # mean squared loss for regression
         
         weights = []
@@ -174,7 +164,7 @@ if __name__ == "__main__":
         print("-------- test loss = %.4f" % testloss.data.numpy())
 
         # calculate distance matrix between the sets of weights for every time step
-        distance = getDistanceMatrix(weights, magnify=15)
+        distance = getDistanceMatrix(weights, magnify=1.5, exclude_first=1)
         
         # draw distance graph
         dt = [('len', float)]
